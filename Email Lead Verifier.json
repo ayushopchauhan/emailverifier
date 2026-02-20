@@ -1,0 +1,370 @@
+{
+  "name": "Email Lead Verifier",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# 📧 Email Verifier - Free Edition\n\n## Setup\n\n1. Create a Google Sheet with two tabs:\n   - Input → one column: email\n   - Results → paste this header row:\n\nemail, category, confidence_score, safe_to_send, status, reason, domain, suggested_fix, is_free_provider, is_role_based, is_disposable, is_catch_all, has_mx, has_spf, has_dmarc, has_gravatar, has_typo, smtp_checked, smtp_result, is_gmail, is_microsoft, flags, verified_at, ms_verified, verification_depth, smtp_code, smtp_attempts, ms_debug, needs_recheck\n\n2. Connect both Google Sheets nodes to your sheet.\n   - One → Input\n   - One → Results\n\n3. Set up Google Sheets OAuth (if not already done).\n\n4. Click **Test Workflow**.\n\n---\n\n## Requirements\n\n- Self-hosted n8n\n- Port 25 outbound open\n- Google Sheets OAuth configured\n- Max 200 emails per run\n\nResults appear in the Results tab automatically.\n",
+        "height": 748,
+        "width": 932,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        5392,
+        704
+      ],
+      "id": "ac37606f-d4fa-4a6a-9e71-65698f3e141e",
+      "name": "Setup Guide"
+    },
+    {
+      "parameters": {
+        "content": "## What It Checks\n\n- Email syntax validation (RFC compliant)\n- Typo detection (gmial.com, hotmal.com, etc.)\n- Role-based addresses (admin@, info@, support@)\n- Disposable emails (local list + Kickbox API)\n- MX records\n- SPF and DMARC records\n- Gravatar profile\n- Microsoft account verification (Azure AD API)\n- SMTP mailbox verification\n- Catch-all domain detection\n- Confidence score (0–100)\n\nRuns without paid API keys.",
+        "height": 372,
+        "width": 508,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        5392,
+        1648
+      ],
+      "id": "8fd6f0e9-feb1-4823-be3f-81eeb800f953",
+      "name": "Features"
+    },
+    {
+      "parameters": {
+        "content": "## 🚀 Pro Version\n\nFor regular use or larger lists:\n\n- Telegram bot (upload CSV, receive results)\n- 2000+ emails per run\n- Batch SMTP processing\n- Adaptive rate limiting\n- Auto-retry for rate-limited servers\n- Secondary MX fallback\n- CSV export (safe emails + full report)\n- Domain interleaving for faster processing\n- Full documentation included\n\nhttps://ayushopchauhan.gumroad.com/l/emailverifierpro",
+        "height": 352,
+        "width": 456,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        7008,
+        1200
+      ],
+      "id": "3d4b2992-eff6-4eaa-98fd-02ee8c614d0e",
+      "name": "Pro Version"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        5392,
+        1488
+      ],
+      "id": "ca96ad78-8eb6-4bca-9f3b-ee964a75c769",
+      "name": "Start"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "=[PLACEHOLDER]",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "[PLACEHOLDER]"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        5600,
+        1488
+      ],
+      "id": "3bb1f26c-2447-4c8f-8475-240c0f6a3d3c",
+      "name": "Read Input Emails",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "6S6YXefhfKVWGE0E",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst groups = {};\n\nfor (const item of items) {\n  const email = (item.json.email || '').trim().toLowerCase();\n  if (!email || !email.includes('@')) continue;\n  const domain = email.split('@')[1] || 'unknown';\n  if (!groups[domain]) groups[domain] = [];\n  groups[domain].push({ json: { email } });\n}\n\n// interleave by domain so we dont hammer the same mail server\nconst domains = Object.keys(groups);\nconst result = [];\nlet hasMore = true;\n\nwhile (hasMore) {\n  hasMore = false;\n  for (const domain of domains) {\n    if (groups[domain].length > 0) {\n      result.push(groups[domain].shift());\n      hasMore = true;\n    }\n  }\n}\n\nif (result.length === 0) {\n  throw new Error('No valid emails found in the Input sheet. Make sure you have a column called \"email\".');\n}\n\nif (result.length > 200) {\n  throw new Error('Free version supports up to 200 emails. You have ' + result.length + '. Pro version handles 2000+ with faster batch processing.');\n}\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5808,
+        1488
+      ],
+      "id": "0fbaae47-c813-4285-afcd-f0be0dfc9a2e",
+      "name": "Prepare & Sort Emails"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        6016,
+        1488
+      ],
+      "id": "82d21b77-9ced-419e-83a2-36e863de8f8f",
+      "name": "Process One By One"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const email = ($input.item.json.email || '').trim().toLowerCase();\nconst atIndex = email.indexOf('@');\nconst localPart = atIndex > 0 ? email.substring(0, atIndex) : '';\nconst domain = atIndex > 0 ? email.substring(atIndex + 1) : '';\n\nconst syntaxRegex = /^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;\nconst syntaxValid = syntaxRegex.test(email);\n\nconst typoMap = {\n  'gmial.com':'gmail.com','gmal.com':'gmail.com','gmaill.com':'gmail.com',\n  'gamil.com':'gmail.com','gnail.com':'gmail.com','gmail.co':'gmail.com',\n  'gmai.com':'gmail.com','gmil.com':'gmail.com','gmail.cm':'gmail.com',\n  'gmail.con':'gmail.com','gmail.vom':'gmail.com','gmail.cmo':'gmail.com',\n  'gmaul.com':'gmail.com',\n  'yaho.com':'yahoo.com','yahooo.com':'yahoo.com','yahoo.co':'yahoo.com',\n  'yhaoo.com':'yahoo.com','yaoo.com':'yahoo.com','yahoo.con':'yahoo.com',\n  'hotmal.com':'hotmail.com','hotmai.com':'hotmail.com','hotmial.com':'hotmail.com',\n  'hotmil.com':'hotmail.com','hotmail.co':'hotmail.com','hotmail.con':'hotmail.com',\n  'outlok.com':'outlook.com','outloo.com':'outlook.com','outlool.com':'outlook.com',\n  'outlook.co':'outlook.com','outllok.com':'outlook.com',\n  'iclod.com':'icloud.com','icoud.com':'icloud.com','icloud.co':'icloud.com',\n  'protonmal.com':'protonmail.com','protonmai.com':'protonmail.com'\n};\nconst suggestedDomain = typoMap[domain] || null;\nconst hasTypo = suggestedDomain !== null;\n\nconst rolePrefixes = [\n  'admin','info','support','sales','contact','hello','help',\n  'billing','team','office','marketing','hr','noreply','no-reply',\n  'abuse','postmaster','webmaster','hostmaster','mail','enquiries',\n  'careers','feedback','press','media','legal','compliance',\n  'security','operations','accounts','finance','newsletter',\n  'service','subscribe','unsubscribe','mailer-daemon','root',\n  'manager','director','general','jobs','recruitment','invest',\n  'partners','vendor','suppliers'\n];\nconst isRoleBased = rolePrefixes.includes(localPart);\n\nconst disposableDomains = [\n  'tempmail.com','guerrillamail.com','mailinator.com','throwaway.email',\n  'yopmail.com','sharklasers.com','guerrillamailblock.com','grr.la',\n  'discard.email','trashmail.com','temp-mail.org','10minutemail.com',\n  'tempail.com','fakeinbox.com','mailnesia.com','maildrop.cc',\n  'dispostable.com','tempr.email','drdrb.net','emailondeck.com',\n  'getnada.com','mohmal.com','tempmailo.com','burnermail.io',\n  'guerrillamail.info','guerrillamail.net','guerrillamail.org',\n  'guerrillamail.de','throwam.com','trashmail.me','trashmail.net',\n  'mailcatch.com','mytemp.email','mt2015.com','emailfake.com',\n  'minutemail.com','tempinbox.com','mailforspam.com','spamgourmet.com',\n  'jetable.org','trash-mail.com','tmail.ws','harakirimail.com',\n  'mailexpire.com','mailzilla.com','spamfree24.org','binkmail.com',\n  'spamavert.com','filzmail.com','mailmoat.com','incognitomail.org',\n  'mailnull.com','antispam.de','trash2009.com','one-time.email',\n  'nospamfor.us','thankyou2010.com','dodgeit.com','shieldedmail.com',\n  'mailscrap.com','emz.net','33mail.com','anonmails.de',\n  'crazymailing.com','deadaddress.com','despammed.com','devnullmail.com',\n  'armyspy.com','cuvox.de','dayrep.com','einrot.com','fleckens.hu',\n  'gustr.com','jourrapide.com','rhyta.com','superrito.com','teleworm.us'\n];\nconst isLocalDisposable = disposableDomains.includes(domain);\n\nconst freeProviders = [\n  'gmail.com','yahoo.com','hotmail.com','outlook.com','aol.com',\n  'icloud.com','mail.com','protonmail.com','proton.me','zoho.com',\n  'yandex.com','yandex.ru','gmx.com','gmx.net','live.com','msn.com',\n  'me.com','mac.com','yahoo.co.uk','yahoo.co.in','yahoo.fr',\n  'yahoo.de','yahoo.ca','hotmail.co.uk','hotmail.fr','hotmail.de',\n  'rocketmail.com','tutanota.com','fastmail.com','hey.com',\n  'mail.ru','inbox.com','email.com','usa.com','post.com',\n  'consultant.com','europe.com','asia.com','writeme.com'\n];\nconst isFreeProvider = freeProviders.includes(domain);\n\nlet status = 'pending', reason = '', skipRemaining = false;\n\nif (!syntaxValid) { status = 'invalid'; reason = 'invalid_syntax'; skipRemaining = true; }\nelse if (isLocalDisposable) { status = 'invalid'; reason = 'disposable_email'; skipRemaining = true; }\nelse if (hasTypo) { status = 'risky'; reason = 'likely_typo'; skipRemaining = true; }\n\nreturn { json: {\n  email, localPart, domain, syntaxValid, hasTypo, suggestedDomain,\n  suggestedEmail: hasTypo ? localPart + '@' + suggestedDomain : '',\n  isRoleBased, isLocalDisposable, isFreeProvider, status, reason, skipRemaining\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6288,
+        1584
+      ],
+      "id": "c11466ba-cdb8-45ed-8a61-c9940424d278",
+      "name": "Quick Checks"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\n\nif (item.skipRemaining) {\n  return {\n    json: {\n      ...item,\n      hasMX: false, mxRecords: [], primaryMX: null,\n      isGmailExact: false, isGoogleWorkspace: false,\n      isMicrosoftConsumer: false, isMicrosoft365: false,\n      isGmail: false, isMicrosoft: false,\n      hasSPF: false, hasDMARC: false,\n      isDisposableAPI: false, hasGravatar: false,\n      microsoftExists: null, msDebug: 'skipped'\n    }\n  };\n}\n\nconst dns = require('dns');\nconst http = require('https');\nconst url = require('url');\nconst { promisify } = require('util');\nconst resolveMx = promisify(dns.resolveMx);\nconst resolveTxt = promisify(dns.resolveTxt);\nconst crypto = require('crypto');\n\nfunction httpRequest(fullUrl, method, body, extraHeaders) {\n  return new Promise((resolve, reject) => {\n    const parsed = url.parse(fullUrl);\n    const postData = body ? JSON.stringify(body) : null;\n    const options = {\n      hostname: parsed.hostname, port: 443, path: parsed.path,\n      method: method || 'GET',\n      headers: {\n        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',\n        ...(extraHeaders || {})\n      }\n    };\n    if (postData) {\n      options.headers['Content-Type'] = 'application/json';\n      options.headers['Content-Length'] = Buffer.byteLength(postData);\n    }\n    const req = http.request(options, (res) => {\n      let data = '';\n      res.on('data', (chunk) => { data += chunk; });\n      res.on('end', () => {\n        let parsed = data;\n        try { parsed = JSON.parse(data); } catch (e) {}\n        resolve({ status: res.statusCode, data: parsed });\n      });\n    });\n    req.on('error', (e) => reject(e));\n    req.setTimeout(10000, () => { req.destroy(); reject(new Error('HTTP_TIMEOUT')); });\n    if (postData) req.write(postData);\n    req.end();\n  });\n}\n\nlet hasMX = false, mxRecords = [], primaryMX = null;\nlet hasGoogleMX = false, hasMicrosoftMX = false;\nlet hasSPF = false, hasDMARC = false;\nlet isDisposableAPI = false, hasGravatar = false;\nlet microsoftExists = null, msDebug = 'not_applicable';\n\ntry {\n  const mx = await resolveMx(item.domain);\n  mx.sort((a, b) => a.priority - b.priority);\n  hasMX = mx.length > 0;\n  mxRecords = mx.map(r => r.exchange);\n  primaryMX = mx[0] ? mx[0].exchange : null;\n  hasGoogleMX = mx.some(r => r.exchange.toLowerCase().includes('google') || r.exchange.toLowerCase().includes('gmail'));\n  hasMicrosoftMX = mx.some(r => r.exchange.toLowerCase().includes('outlook') || r.exchange.toLowerCase().includes('microsoft'));\n} catch (e) {}\n\nconst isGmailExact = item.domain === 'gmail.com';\nconst microsoftConsumerDomains = ['outlook.com','hotmail.com','live.com','msn.com','hotmail.co.uk','hotmail.fr','hotmail.de'];\nconst isGoogleWorkspace = hasGoogleMX && !isGmailExact;\nconst isMicrosoftConsumer = microsoftConsumerDomains.includes(item.domain);\nconst isMicrosoft365 = hasMicrosoftMX && !isMicrosoftConsumer;\n\ntry {\n  const txt = await resolveTxt(item.domain);\n  hasSPF = txt.map(r => r.join('')).join(' ').includes('v=spf1');\n} catch (e) {}\n\ntry {\n  const dmarc = await resolveTxt('_dmarc.' + item.domain);\n  hasDMARC = dmarc.map(r => r.join('')).join(' ').includes('v=DMARC1');\n} catch (e) {}\n\ntry {\n  const resp = await httpRequest('https://open.kickbox.com/v1/disposable/' + item.domain);\n  if (resp.status === 200 && resp.data && resp.data.disposable === true) isDisposableAPI = true;\n} catch (e) {}\n\ntry {\n  const hash = crypto.createHash('md5').update(item.email).digest('hex');\n  const resp = await httpRequest('https://www.gravatar.com/avatar/' + hash + '?d=404&s=1');\n  hasGravatar = resp.status === 200;\n} catch (e) {}\n\nif (hasMicrosoftMX) {\n  try {\n    const msResp = await httpRequest(\n      'https://login.microsoftonline.com/common/GetCredentialType', 'POST',\n      { Username: item.email, isOtherIdpSupported: true, checkPhones: false, isRemoteNGCSupported: true, isCookieBannerShown: false, isFidoSupported: false, originalRequest: '', country: 'US', forceotclogin: false, isExternalFederationDisallowed: false, isRemoteConnectSupported: false, federationFlags: 0, isSignup: false, isAccessPassSupported: true },\n      { 'Accept': 'application/json', 'Origin': 'https://login.microsoftonline.com', 'Referer': 'https://login.microsoftonline.com/' }\n    );\n    msDebug = 'http_' + msResp.status;\n    if (msResp.status === 200 && msResp.data && typeof msResp.data === 'object') {\n      const throttle = msResp.data.ThrottleStatus || 0;\n      const exists = msResp.data.IfExistsResult;\n      msDebug = 'throttle:' + throttle + '_exists:' + exists;\n      if (throttle === 1) { microsoftExists = null; msDebug += '_THROTTLED'; }\n      else if (exists === 0 || exists === 5 || exists === 6) microsoftExists = true;\n      else if (exists === 1) microsoftExists = false;\n      else msDebug += '_unexpected';\n    }\n  } catch (e) { msDebug = 'error:' + (e.code || e.message || String(e)).substring(0, 80); }\n}\n\nlet status = item.status, reason = item.reason, skipRemaining = item.skipRemaining;\n\nif (!hasMX) { status = 'invalid'; reason = 'no_mx_records'; skipRemaining = true; }\nelse if (isDisposableAPI) { status = 'invalid'; reason = 'disposable_api'; skipRemaining = true; }\nelse if (microsoftExists === false) { status = 'invalid'; reason = 'microsoft_account_not_found'; skipRemaining = true; }\nelse if (microsoftExists === true) { status = 'valid'; reason = 'microsoft_account_confirmed'; }\n\nreturn { json: {\n  ...item, hasMX, mxRecords, primaryMX,\n  isGmailExact, isGoogleWorkspace, isMicrosoftConsumer, isMicrosoft365,\n  isGmail: hasGoogleMX, isMicrosoft: hasMicrosoftMX,\n  hasSPF, hasDMARC, isDisposableAPI, hasGravatar,\n  microsoftExists, msDebug, status, reason, skipRemaining\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6496,
+        1584
+      ],
+      "id": "9efb62f7-f0b7-48c5-8199-d286832c3dd9",
+      "name": "DNS & API Checks"
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        6704,
+        1584
+      ],
+      "id": "b460b5e4-e011-4bdc-9f7a-6c26c1a053fd",
+      "name": "Wait 15s",
+      "webhookId": "free-version-wait"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\n\nif (item.skipRemaining || !item.primaryMX) {\n  return { json: {\n    ...item, smtpChecked: false, smtpValid: null,\n    smtpCode: item.skipRemaining ? 'skipped' : 'no_mx',\n    isCatchAll: null, smtpAttempts: 0, needsRecheck: false\n  }};\n}\n\nconst consumerSkip = [\n  'gmail.com',\n  'yahoo.com','yahoo.co.uk','yahoo.co.in','yahoo.fr','yahoo.de','yahoo.ca',\n  'outlook.com','hotmail.com','hotmail.co.uk','hotmail.fr','hotmail.de',\n  'live.com','msn.com','aol.com',\n  'icloud.com','me.com','mac.com',\n  'protonmail.com','proton.me',\n  'yandex.com','yandex.ru','mail.ru','rocketmail.com'\n];\n\nif (consumerSkip.includes(item.domain)) {\n  let status = item.status, reason = item.reason;\n  if (item.microsoftExists === true) { status = 'valid'; reason = 'microsoft_account_confirmed'; }\n  else if (item.microsoftExists === false) { status = 'invalid'; reason = 'microsoft_account_not_found'; }\n  else if (status === 'pending') { status = 'unverifiable'; reason = 'consumer_provider'; }\n  return { json: {\n    ...item, smtpChecked: false, smtpValid: null,\n    smtpCode: 'consumer_skipped', isCatchAll: null,\n    smtpAttempts: 0, needsRecheck: false, status, reason\n  }};\n}\n\nconst net = require('net');\n\nfunction smtpCheck(mxHost, emailAddr, timeoutMs) {\n  return new Promise((resolve) => {\n    let done = false, step = 0, buffer = '';\n    const finish = (r) => { if (!done) { done = true; resolve(r); } };\n\n    let socket;\n    try { socket = net.createConnection(25, mxHost); }\n    catch (e) { return finish({ accepted: null, code: 'CONN_FAIL:' + (e.code || e.message || '').substring(0, 60) }); }\n\n    socket.setTimeout(timeoutMs || 15000);\n\n    const handleResponse = (code, message) => {\n      if (done) return;\n      if (step === 0) {\n        if (code >= 200 && code < 300) { step = 1; try { socket.write('EHLO mail.verifier.local\\r\\n'); } catch(e) {} }\n        else { finish({ accepted: null, code: code + ' ' + message }); try { socket.write('QUIT\\r\\n'); socket.end(); } catch(e) {} }\n      } else if (step === 1) {\n        if (code >= 200 && code < 300) { step = 2; try { socket.write('MAIL FROM:<check@verifier.local>\\r\\n'); } catch(e) {} }\n        else { finish({ accepted: null, code: code + ' ' + message }); try { socket.write('QUIT\\r\\n'); socket.end(); } catch(e) {} }\n      } else if (step === 2) {\n        if (code >= 200 && code < 300) { step = 3; try { socket.write('RCPT TO:<' + emailAddr + '>\\r\\n'); } catch(e) {} }\n        else { finish({ accepted: null, code: code + ' ' + message }); try { socket.write('QUIT\\r\\n'); socket.end(); } catch(e) {} }\n      } else if (step === 3) {\n        let accepted = null;\n        if (code >= 200 && code < 300) accepted = true;\n        else if (code >= 500 && code < 600) accepted = false;\n        finish({ accepted, code: code + ' ' + message });\n        try { socket.write('QUIT\\r\\n'); } catch(e) {}\n        setTimeout(() => { try { socket.destroy(); } catch(e) {} }, 1000);\n      }\n    };\n\n    socket.on('data', (chunk) => {\n      buffer += chunk.toString();\n      const lines = buffer.split(/\\r?\\n/);\n      for (let i = 0; i < lines.length; i++) {\n        const line = lines[i];\n        const m = line.match(/^(\\d{3}) (.*)$/);\n        if (m) {\n          buffer = lines.slice(i + 1).join('\\n');\n          handleResponse(parseInt(m[1]), m[2].substring(0, 100).trim());\n          if (done) return;\n        }\n      }\n    });\n\n    socket.on('timeout', () => { finish({ accepted: null, code: 'TIMEOUT_step' + step }); try { socket.destroy(); } catch(e) {} });\n    socket.on('error', (err) => { finish({ accepted: null, code: 'ERR:' + (err.code || err.message || 'unknown').substring(0, 60) }); try { socket.destroy(); } catch(e) {} });\n    socket.on('close', () => { finish({ accepted: null, code: 'CLOSED_step' + step }); });\n  });\n}\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.catchAllCache) staticData.catchAllCache = {};\n\nlet isCatchAll = null;\n\nif (staticData.catchAllCache[item.domain] !== undefined) {\n  isCatchAll = staticData.catchAllCache[item.domain];\n} else {\n  const fakeAddr = 'xq9z7k2m4p8v_' + Date.now() + '@' + item.domain;\n  try {\n    const catchResult = await smtpCheck(item.primaryMX, fakeAddr, 15000);\n    if (catchResult.accepted === true) isCatchAll = true;\n    else if (catchResult.accepted === false) isCatchAll = false;\n    if (isCatchAll !== null) staticData.catchAllCache[item.domain] = isCatchAll;\n  } catch (e) {}\n  await new Promise(r => setTimeout(r, 5000));\n}\n\nlet smtpValid = null, smtpCode = '', smtpAttempts = 0, needsRecheck = false;\n\ntry {\n  smtpAttempts = 1;\n  const result = await smtpCheck(item.primaryMX, item.email, 15000);\n  smtpValid = result.accepted;\n  smtpCode = result.code || '';\n  if (smtpValid === null && (smtpCode.includes('TIMEOUT') || smtpCode.includes('ETIMEDOUT') || smtpCode.includes('ECONNREFUSED') || smtpCode.includes('ECONNRESET') || smtpCode.includes('CLOSED_step0'))) {\n    needsRecheck = true;\n  }\n} catch (e) { smtpCode = 'EXCEPTION:' + (e.message || '').substring(0, 40); needsRecheck = true; }\n\nlet status = item.status, reason = item.reason;\n\nif (item.microsoftExists === true) { status = 'valid'; reason = 'microsoft_account_confirmed'; needsRecheck = false; }\nelse if (item.microsoftExists === false) { status = 'invalid'; reason = 'microsoft_account_not_found'; needsRecheck = false; }\nelse if (smtpValid === true && isCatchAll === false) { status = 'valid'; reason = 'smtp_verified'; }\nelse if (smtpValid === true && isCatchAll === true) { status = 'catch_all'; reason = 'catch_all_domain'; }\nelse if (smtpValid === true && isCatchAll === null) { status = 'likely_valid'; reason = 'smtp_accepted'; }\nelse if (smtpValid === false) { status = 'invalid'; reason = 'smtp_rejected'; }\nelse if (needsRecheck) { status = 'recheck'; reason = 'server_rate_limited'; }\nelse if (status === 'pending') { status = 'unknown'; reason = 'smtp_inconclusive'; }\n\nreturn { json: {\n  ...item, smtpChecked: smtpAttempts > 0, smtpValid, smtpCode,\n  isCatchAll, smtpAttempts, needsRecheck, status, reason\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6912,
+        1584
+      ],
+      "id": "a6e163cd-c366-4ac8-8995-329653c3cd0f",
+      "name": "SMTP Verification"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\n\nlet score = 0;\nlet flags = [];\n\nif (item.syntaxValid) score += 15;\nif (item.hasMX) score += 20;\nif (item.hasSPF) score += 5;\nif (item.hasDMARC) score += 5;\nif (item.hasGravatar) { score += 15; flags.push('has_gravatar'); }\nif (item.smtpValid === true && item.isCatchAll === false) score += 30;\nif (item.microsoftExists === true) { score += 25; flags.push('ms_verified'); }\nif (!item.isRoleBased) score += 5;\nif (!item.isLocalDisposable && !item.isDisposableAPI) score += 5;\n\nif (!item.syntaxValid) { score = 0; flags.push('bad_syntax'); }\nif (item.hasTypo) { score = Math.min(score, 15); flags.push('typo_detected'); }\nif (item.smtpValid === false) { score = Math.min(score, 5); flags.push('smtp_rejected'); }\nif (item.microsoftExists === false) { score = Math.min(score, 5); flags.push('ms_not_found'); }\nif (!item.hasMX) { score = Math.min(score, 5); flags.push('no_mx'); }\nif (item.isCatchAll === true) { score = Math.min(score, 55); flags.push('catch_all'); }\nif (item.isLocalDisposable || item.isDisposableAPI) { score = Math.min(score, 10); flags.push('disposable'); }\nif (item.isRoleBased) flags.push('role_based');\nif (item.isGoogleWorkspace) flags.push('google_workspace');\nif (item.isMicrosoft365) flags.push('microsoft_365');\n\nlet verificationDepth;\nif (item.microsoftExists !== null) verificationDepth = 'mailbox_api';\nelse if (item.smtpValid !== null && item.isCatchAll === false) verificationDepth = 'mailbox_smtp';\nelse if (item.isCatchAll === true) verificationDepth = 'domain_catchall';\nelse if (item.needsRecheck) verificationDepth = 'needs_recheck';\nelse if (item.smtpValid === null && (item.smtpAttempts || 0) > 0) verificationDepth = 'smtp_inconclusive';\nelse verificationDepth = 'domain_only';\n\nif (verificationDepth === 'needs_recheck') {\n  const good = item.hasSPF && item.hasDMARC;\n  const biz = item.isGoogleWorkspace || item.isMicrosoft365;\n  if (biz && good) score = Math.min(score, 60);\n  else if (good) score = Math.min(score, 55);\n  else score = Math.min(score, 50);\n  flags.push('rate_limited_recheck');\n}\nif (verificationDepth === 'domain_only') { score = Math.min(score, 50); flags.push('no_mailbox_verification'); }\nif (verificationDepth === 'smtp_inconclusive') { score = Math.min(score, 55); flags.push('smtp_no_clear_answer'); }\n\nscore = Math.max(0, Math.min(100, score));\n\nlet category;\nif (score >= 80) category = 'valid';\nelse if (score >= 60) category = 'likely_valid';\nelse if (score >= 40) category = 'risky';\nelse if (score >= 20) category = 'unknown';\nelse category = 'invalid';\n\nconst safeToSend = score >= 60;\n\nreturn { json: {\n  email: item.email, category, confidence_score: score,\n  safe_to_send: safeToSend ? 'YES' : 'NO',\n  status: item.status, reason: item.reason, domain: item.domain,\n  suggested_fix: item.suggestedEmail || '',\n  is_free_provider: item.isFreeProvider ? 'yes' : 'no',\n  is_role_based: item.isRoleBased ? 'yes' : 'no',\n  is_disposable: (item.isLocalDisposable || item.isDisposableAPI) ? 'yes' : 'no',\n  is_catch_all: item.isCatchAll === true ? 'yes' : item.isCatchAll === false ? 'no' : 'unknown',\n  has_mx: item.hasMX ? 'yes' : 'no',\n  has_spf: item.hasSPF ? 'yes' : 'no',\n  has_dmarc: item.hasDMARC ? 'yes' : 'no',\n  has_gravatar: item.hasGravatar ? 'yes' : 'no',\n  has_typo: item.hasTypo ? 'yes' : 'no',\n  smtp_checked: (item.smtpAttempts || 0) > 0 ? 'yes' : 'no',\n  smtp_result: item.smtpValid === true ? 'accepted' : item.smtpValid === false ? 'rejected' : 'unknown',\n  is_gmail: (item.isGmailExact || false) ? 'yes' : 'no',\n  is_microsoft: item.isMicrosoft ? 'yes' : 'no',\n  ms_verified: item.microsoftExists === true ? 'yes' : item.microsoftExists === false ? 'no' : 'n/a',\n  verification_depth: verificationDepth,\n  needs_recheck: item.needsRecheck ? 'YES' : 'no',\n  smtp_code: (item.smtpCode || '').substring(0, 100),\n  smtp_attempts: item.smtpAttempts || 0,\n  ms_debug: item.msDebug || '',\n  flags: flags.join(', '),\n  verified_at: new Date().toISOString()\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7120,
+        1584
+      ],
+      "id": "1505f791-d393-45af-b782-6fdc390a1471",
+      "name": "Final Scoring"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=[PLACEHOLDER]",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "[PLACEHOLDER]",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        7328,
+        1584
+      ],
+      "id": "56c55e25-d8c8-4c23-8f6b-2d4aea77a60e",
+      "name": "Write Results",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "6S6YXefhfKVWGE0E",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 1344,
+        "width": 2112,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        5376,
+        688
+      ],
+      "typeVersion": 1,
+      "id": "d20b0a54-c4b3-4a52-a97f-698927c44ea3",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Read Input Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Input Emails": {
+      "main": [
+        [
+          {
+            "node": "Prepare & Sort Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare & Sort Emails": {
+      "main": [
+        [
+          {
+            "node": "Process One By One",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process One By One": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Quick Checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quick Checks": {
+      "main": [
+        [
+          {
+            "node": "DNS & API Checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DNS & API Checks": {
+      "main": [
+        [
+          {
+            "node": "Wait 15s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 15s": {
+      "main": [
+        [
+          {
+            "node": "SMTP Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMTP Verification": {
+      "main": [
+        [
+          {
+            "node": "Final Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Scoring": {
+      "main": [
+        [
+          {
+            "node": "Write Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Results": {
+      "main": [
+        [
+          {
+            "node": "Process One By One",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "ed12a2fc-430b-45f8-8289-19c83d9a8945",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "12b669aa2c2fe8212ea8841d5a199453d07a24cdf4175a53362ed77599b05d43"
+  },
+  "id": "raVEAZFlsp848pIj",
+  "tags": []
+}
