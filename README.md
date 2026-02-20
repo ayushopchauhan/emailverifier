@@ -43,4 +43,4 @@ I also built a Pro version for users who need to verify larger lists automatical
 
 The Pro version includes the full workflow JSON, a Telegram bot interface, and a detailed setup guide.
 
-**[View Pro Version Details](YOUR_GUMROAD_LINK_HERE)**
+**[View Pro Version Details](https://ayushopchauhan.gumroad.com/l/emailverifierpro)**
